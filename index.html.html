@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Galeria com Votos</title>
+  <style>
+    :root {
+      --bg:#0f172a; /* slate-900 */
+      --card:#111827; /* gray-900 */
+      --muted:#94a3b8; /* slate-400 */
+      --accent:#fb7185; /* rose-400 */
+      --ring:#22c55e; /* green-500 */
+      --ring-red:#ef4444; /* red-500 */
+      --btn:#f1f5f9; /* slate-100 */
+      --btn-txt:#0f172a;
+      --radius:18px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu,'Helvetica Neue',Arial,sans-serif;background:radial-gradient(1200px 600px at 100% -10%,#1f2937 0%,var(--bg) 60%);color:#e5e7eb}
+    .wrap{max-width:1100px;margin:28px auto;padding:0 18px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}
+    h1{font-size:clamp(20px,2.6vw,28px);margin:0}
+    .tabs{display:flex;gap:10px}
+    .tab{padding:10px 14px;border-radius:999px;background:#1f2937;color:#cbd5e1;border:1px solid #263043;cursor:pointer}
+    .tab.active{background:#eab308;color:#0f172a;border-color:#eab308;font-weight:700}
+
+    /* Inserção */
+    .card{background:linear-gradient(180deg,#0b1220,#0b1220 60%,#0a0f1a);border:1px solid #1e293b;border-radius:var(--radius);padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    input[type="url"]{flex:1;min-width:280px;font-size:16px;padding:14px 16px;border-radius:999px;border:1px solid #233046;background:#0b1220;color:#e5e7eb;outline:none}
+    input[type="url"]:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+    button{padding:12px 16px;border-radius:999px;border:0;background:var(--btn);color:var(--btn-txt);font-weight:700;cursor:pointer}
+    button.secondary{background:#0b1220;color:#cbd5e1;border:1px solid #1f2a3c}
+
+    .hint{color:var(--muted);font-size:14px;margin-top:10px}
+
+    /* Galeria */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px;margin-top:18px}
+    .item{background:var(--card);border:1px solid #1f2937;border-radius:20px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.25);position:relative}
+    .thumb{aspect-ratio:1/1.05;background:#0b1220;display:block;overflow:hidden}
+    .thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s ease}
+    .item:hover .thumb img{transform:scale(1.02)}
+
+    .voteBar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 14px}
+    .voteBtns{display:flex;gap:8px}
+    .vbtn{display:flex;align-items:center;gap:6px;padding:10px 12px;border-radius:999px;background:#0b1220;border:1px solid #1f283a;color:#e5e7eb;cursor:pointer}
+    .vbtn span{font-size:18px}
+    .vbtn:active{transform:translateY(1px)}
+    .stats{font-size:13px;color:#a3b1c6}
+
+    /* flash on vote */
+    .flash-green{box-shadow:0 0 0 3px rgba(34,197,94,.5) inset, 0 0 0 2px var(--ring);animation:flash .65s ease}
+    .flash-red{box-shadow:0 0 0 3px rgba(239,68,68,.45) inset, 0 0 0 2px var(--ring-red);animation:flash .65s ease}
+    @keyframes flash{0%{filter:none}50%{filter:brightness(1.25)}100%{filter:none}}
+
+    .empty{border:1px dashed #334155;border-radius:16px;padding:28px;text-align:center;color:#94a3b8}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Galeria com Votos</h1>
+      <nav class="tabs">
+        <button class="tab active" data-tab="inserir">Inserir URL</button>
+        <button class="tab" data-tab="galeria">Galeria</button>
+      </nav>
+    </header>
+
+    <!-- Inserção -->
+    <section id="inserir" class="card">
+      <div class="row">
+        <input id="imgUrl" type="url" placeholder="Inserir URL da imagem…" />
+        <button id="addBtn">Adicionar</button>
+        <button id="clearBtn" class="secondary" title="Apaga todas as imagens guardadas">Limpar tudo</button>
+      </div>
+      <p class="hint">Cole aqui o link direto da imagem (termina normalmente em .jpg, .png, .webp). Apenas URL — mais nada.</p>
+    </section>
+
+    <!-- Galeria -->
+    <section id="galeria" class="card" style="margin-top:16px; display:none;">
+      <div id="gallery" class="grid"></div>
+    </section>
+  </div>
+
+  <script>
+    // --- Storage helpers ---
+    const LS_KEY = 'galleryImages_v1';
+    const VOTE_KEY = 'myVotes_v1'; // evita múltiplos votos no mesmo item por utilizador (neste browser)
+
+    const load = (key, fallback) => {
+      try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch(_) { return fallback; }
+    }
+    const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+
+    let items = load(LS_KEY, []);
+    let myVotes = load(VOTE_KEY, {}); // {id: 'like'|'dislike'}
+
+    // --- UI Tabs ---
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(t=>t.addEventListener('click', ()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      const tab = t.dataset.tab;
+      document.getElementById('inserir').style.display = (tab==='inserir')?'block':'none';
+      document.getElementById('galeria').style.display = (tab==='galeria')?'block':'none';
+      if(tab==='galeria') renderGallery();
+    }));
+
+    // --- Add image ---
+    function validUrl(u){
+      try { new URL(u); return /\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/i.test(u); } catch{ return false }
+    }
+    function addImage(){
+      const url = document.getElementById('imgUrl').value.trim();
+      if(!validUrl(url)) { alert('Coloque um URL de imagem válido (jpg, png, webp, …).'); return; }
+      const id = Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      items.unshift({id,url,likes:0,dislikes:0});
+      save(LS_KEY, items);
+      document.getElementById('imgUrl').value = '';
+      // muda para a galeria automaticamente
+      document.querySelector('.tab[data-tab="galeria"]').click();
+    }
+
+    document.getElementById('addBtn').addEventListener('click', addImage);
+    document.getElementById('imgUrl').addEventListener('keydown', e=>{ if(e.key==='Enter') addImage(); });
+    document.getElementById('clearBtn').addEventListener('click', ()=>{
+      if(confirm('Apagar todas as imagens e votos guardados neste navegador?')){
+        items = []; myVotes = {}; save(LS_KEY, items); save(VOTE_KEY, myVotes); renderGallery();
+      }
+    });
+
+    // --- Render gallery ---
+    function renderGallery(){
+      const cont = document.getElementById('gallery');
+      cont.innerHTML = '';
+      if(items.length===0){
+        cont.innerHTML = `<div class="empty">Ainda não existem imagens. Adicione um URL na aba <b>Inserir URL</b>.</div>`;
+        return;
+      }
+      for(const it of items){
+        const total = it.likes + it.dislikes;
+        const voted = myVotes[it.id];
+        const el = document.createElement('article');
+        el.className = 'item';
+        el.innerHTML = `
+          <a class="thumb" href="${it.url}" target="_blank" rel="noopener noreferrer">
+            <img src="${it.url}" alt="imagem" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 600 400\'><rect width=\'100%\' height=\'100%\' fill=\'%230b1220\'/><text x=\'50%\' y=\'50%\' fill=\'%2394a3b8\' font-size=\'20\' text-anchor=\'middle\' dy=\'.3em\'>URL inválido</text></svg>'"/>
+          </a>
+          <div class="voteBar">
+            <div class="voteBtns">
+              <button class="vbtn like" data-id="${it.id}" aria-label="Gosto"><span>👍</span><b>${it.likes}</b></button>
+              <button class="vbtn dislike" data-id="${it.id}" aria-label="Não gosto"><span>👎</span><b>${it.dislikes}</b></button>
+            </div>
+            <div class="stats">Total <b>${total}</b></div>
+          </div>`;
+        // marca visual se já votou
+        if(voted==='like') el.querySelector('.like').style.outline = '2px solid #22c55e';
+        if(voted==='dislike') el.querySelector('.dislike').style.outline = '2px solid #ef4444';
+        cont.appendChild(el);
+      }
+      // liga eventos após inserir no DOM
+      cont.querySelectorAll('.vbtn.like').forEach(btn=>btn.addEventListener('click', ()=>vote(btn.dataset.id,'like',btn)));
+      cont.querySelectorAll('.vbtn.dislike').forEach(btn=>btn.addEventListener('click', ()=>vote(btn.dataset.id,'dislike',btn)));
+    }
+
+    // --- Voting ---
+    function vote(id, type, btn){
+      const idx = items.findIndex(x=>x.id===id);
+      if(idx===-1) return;
+      const card = btn.closest('.item');
+
+      const prev = myVotes[id];
+      if(prev === type){ // desfaz voto
+        if(type==='like' && items[idx].likes>0) items[idx].likes--;
+        if(type==='dislike' && items[idx].dislikes>0) items[idx].dislikes--;
+        delete myVotes[id];
+        flash(card, type==='like' ? 'red' : 'green');
+      } else {
+        if(type==='like') items[idx].likes++; else items[idx].dislikes++;
+        // se tinha voto anterior, remove-o
+        if(prev==='like' && items[idx].likes>0) items[idx].likes--;
+        if(prev==='dislike' && items[idx].dislikes>0) items[idx].dislikes--;
+        myVotes[id] = type;
+        flash(card, type==='like' ? 'green' : 'red');
+      }
+
+      save(LS_KEY, items); save(VOTE_KEY, myVotes);
+      renderGallery();
+    }
+
+    function flash(el, color){
+      el.classList.remove('flash-green','flash-red');
+      void el.offsetWidth; // reflow para reiniciar animação
+      el.classList.add(color==='green'?'flash-green':'flash-red');
+      setTimeout(()=>el.classList.remove('flash-green','flash-red'), 700);
+    }
+
+    // arranque
+    renderGallery();
+  </script>
+</body>
+</html>
